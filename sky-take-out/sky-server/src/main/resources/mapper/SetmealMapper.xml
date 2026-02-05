@@ -55,4 +55,12 @@
     </select>
 
 
+    <select id="selectDishBySetmealId" resultType="com.sky.vo.DishItemVO">
+        select s.name,s.copies,d.description,d.image
+        from setmeal_dish s left join dish d
+        on s.name = d.name
+        where s.setmeal_id = #{id}
+    </select>
+
+
 </mapper>

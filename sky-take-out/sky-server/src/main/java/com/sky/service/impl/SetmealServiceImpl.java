@@ -117,4 +117,16 @@ private DishMapper dishMapper;
         }
     }
 
+    @Override
+    public List<Setmeal> selectBycategoryId(Long categoryId) {
+        List<Setmeal> result = setmealMapper.selectByCategoryId(categoryId);
+        return result;
+    }
+
+    @Override
+    public List<DishItemVO> selectDishBySetmealId(Long id) {
+        List<DishItemVO> result = setmealMapper.selectDishBySetmealId(id);
+        return result;
+    }
+
 }

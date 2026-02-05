@@ -34,4 +34,6 @@ public interface DishMapper {
     List<Dish> list(Dish dish);
 
     Page<DishVO> pageQuery(DishPageQueryDTO q);
+
+    List<DishVO> selectWithFlavorByCategoryId(Long categoryId);
 }

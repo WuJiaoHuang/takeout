@@ -24,4 +24,9 @@ public interface SetmealService {
     void updateStatus(Long id, Integer status);
 
     void deleteById(List<Long> ids);
+
+
+    List<Setmeal> selectBycategoryId(Long categoryId);
+
+    List<DishItemVO> selectDishBySetmealId(Long id);
 }

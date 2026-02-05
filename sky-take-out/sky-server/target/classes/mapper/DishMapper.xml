@@ -79,6 +79,14 @@
         order by d.create_time desc
 
     </select>
+    <select id="selectWithFlavorByCategoryId" resultType="com.sky.vo.DishVO">
+        select d.id,d.image,d.name,d.price,d.status,d.update_time,d.category_id,d.description,c.name category_name,f.*
+        from dish d left join category c on d.category_id = c.id
+        left join dish_flavor f on d.id = f.dish_id
+        where d.category_id = #{categoryId}
+
+
+    </select>
 
 
 </mapper>
