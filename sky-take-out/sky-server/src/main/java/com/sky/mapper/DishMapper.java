@@ -15,8 +15,6 @@ import java.util.List;
 
 @Mapper
 public interface DishMapper {
-    @Select("select * from dish where category_id=#{categoryId}")
-    List<Dish> getByCategoryId(Long categoryId);
 
     @AutoFill(OperationType.INSERT)
     void insert(Dish dish);
@@ -35,5 +33,5 @@ public interface DishMapper {
 
     Page<DishVO> pageQuery(DishPageQueryDTO q);
 
-    List<DishVO> selectWithFlavorByCategoryId(Long categoryId);
+
 }

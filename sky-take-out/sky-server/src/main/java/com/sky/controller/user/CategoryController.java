@@ -30,7 +30,8 @@ public class CategoryController {
     @ApiOperation("查询分类")
     public Result<List<Category>> list(Integer type) {
         log.info("通过type(1 菜品分类 2 套餐分类)  {}查询",type);
-        List<Category> list = categoryService.list(type);
+        Category c = Category.builder().status(1).type(type).build();
+        List<Category> list = categoryService.list(c);
         return Result.success(list);
     }
 }

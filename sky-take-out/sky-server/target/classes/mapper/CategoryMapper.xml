@@ -33,6 +33,9 @@
             <if test="type != null">
                 and type = #{type}
             </if>
+            <if test="status != null">
+                and status = #{status}
+            </if>
         </where>
         order by sort,create_time
 

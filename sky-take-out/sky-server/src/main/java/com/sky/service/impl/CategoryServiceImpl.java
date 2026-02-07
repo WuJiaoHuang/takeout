@@ -65,8 +65,7 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     @Override
-    public ArrayList<Category> list(Integer type) {
-        Category c = Category.builder().type(type).build();
+    public ArrayList<Category> list(Category c) {
         List<Category> list = categoryMapper.queryCategories(c);
         return new ArrayList<>(list);
     }

@@ -18,5 +18,5 @@ public interface CategoryService {
 
     void setStatus(Integer status, Long id);
 
-    ArrayList<Category> list(Integer type);
+    ArrayList<Category> list(Category c);
 }

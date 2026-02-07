@@ -57,7 +57,8 @@ public class CategoryController {
 
     @GetMapping("/list")
     public Result selectByType(Integer type){
-        ArrayList<Category> result = categoryService.list(type);
+        Category c = Category.builder().type(type).build();
+        ArrayList<Category> result = categoryService.list(c);
         return Result.success(result);
     }
 
