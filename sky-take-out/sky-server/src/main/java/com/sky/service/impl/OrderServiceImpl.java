@@ -1,9 +1,11 @@
 package com.sky.service.impl;
 
 import com.alibaba.fastjson.JSONObject;
+import com.github.pagehelper.PageHelper;
 import com.sky.constant.MessageConstant;
 import com.sky.context.BaseContext;
 import com.sky.controller.user.ShopController;
+import com.sky.dto.OrdersPageQueryDTO;
 import com.sky.dto.OrdersPaymentDTO;
 import com.sky.dto.OrdersSubmitDTO;
 import com.sky.entity.*;
@@ -11,21 +13,25 @@ import com.sky.exception.AddressBookBusinessException;
 import com.sky.exception.OrderBusinessException;
 import com.sky.exception.ShoppingCartBusinessException;
 import com.sky.mapper.*;
+import com.sky.result.PageResult;
 import com.sky.service.OrderService;
 import com.sky.utils.WeChatPayUtil;
 import com.sky.vo.OrderPaymentVO;
 import com.sky.vo.OrderSubmitVO;
+import com.sky.vo.OrderVO;
 import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.asm.Advice;
 import org.aspectj.bridge.Message;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -79,6 +85,13 @@ public class OrderServiceImpl implements OrderService {
         orders.setPhone(addressBook.getPhone());
         orders.setConsignee(addressBook.getConsignee());
         orders.setUserId(BaseContext.getCurrentId());
+        orders.setNumber(String.valueOf(System.currentTimeMillis()));
+        orders.setAddress(addressBook.getDetail());
+
+
+
+
+
         orderMapper.insert(orders);
 
         List<OrderDetail> orderDetailList = new ArrayList<>();
@@ -111,19 +124,6 @@ public class OrderServiceImpl implements OrderService {
         Long userId = BaseContext.getCurrentId();
 
         User user = userMapper.getById(userId);
-
-
-//        //调用微信支付接口，生成预支付交易单
-//        JSONObject jsonObject = weChatPayUtil.pay(
-//                ordersPaymentDTO.getOrderNumber(), //商户订单号
-//                new BigDecimal(0.01), //支付金额，单位 元
-//                "苍穹外卖订单", //商品描述
-//                user.getOpenid() //微信用户的openid
-//        );
-//
-//        if (jsonObject.getString("code") != null && jsonObject.getString("code").equals("ORDERPAID")) {
-//            throw new OrderBusinessException("该订单已支付");
-//        }
 
 
         JSONObject jsonObject = new JSONObject();
@@ -165,6 +165,109 @@ public class OrderServiceImpl implements OrderService {
                 .build();
 
         orderMapper.update(orders);
+    }
+
+
+    /**
+     * 查询历史订单
+     * @param ordersPageQueryDTO
+     * @return
+     */
+    @Override
+    public PageResult historyOrders(OrdersPageQueryDTO ordersPageQueryDTO) {
+        Long userId = BaseContext.getCurrentId();
+        Orders orders = Orders.builder().userId(userId).status(ordersPageQueryDTO.getStatus()).build();
+
+        List<Orders> list1 = orderMapper.select(orders);
+        List<OrderVO> result = new ArrayList<>();
+        for(Orders o:list1){
+            Long orderId = o.getId();
+            List<OrderDetail> list2=orderDetailMapper.selectByOrderId(orderId);
+            OrderVO orderVO = new OrderVO();
+            BeanUtils.copyProperties(o,orderVO);
+            orderVO.setOrderDetailList(list2);
+            result.add(orderVO);
+        }
+        return new PageResult(result.size(),result);
+
+    }
+
+
+    /**
+     * 根据orderId查询订单详情
+     * @param id
+     * @return
+     */
+    @Override
+    public OrderVO orderDetail(Long id) {
+        Orders orders = Orders.builder().id(id).build();
+        Orders o1 =  orderMapper.select(orders).get(0);
+        OrderVO result = new OrderVO();
+        BeanUtils.copyProperties(o1,result);
+        List<OrderDetail> orderDetailList = orderDetailMapper.selectByOrderId(id);
+        result.setOrderDetailList(orderDetailList);
+        return result;
+    }
+
+    /**
+     * 根据订单id取消订单
+     * @param id
+     */
+    @Override
+    @Transactional
+    public void cancel(Long id) {
+
+        //查询订单状态
+        Orders orderDB = orderMapper.select(Orders.builder().id(id).build()).get(0);
+        if(orderDB == null){
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
+        if(orderDB.getStatus()>2){
+            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
+        Orders orders = Orders.builder().id(id).status(6).cancelReason("用户取消").cancelTime(LocalDateTime.now()).build();
+        if(orderDB.getStatus().equals(Orders.TO_BE_CONFIRMED)){
+            orders.setPayStatus(Orders.REFUND);
+        }
+        orderMapper.update(orders);
+    }
+
+
+
+
+
+
+
+
+    /**
+     * 再来一单
+     *
+     * @param id
+     */
+
+    public void repetition(Long id) {
+        // 查询当前用户id
+        Long userId = BaseContext.getCurrentId();
+
+        // 根据订单id查询当前订单详情
+        List<OrderDetail> orderDetailList = orderDetailMapper.selectByOrderId(id);
+
+        // 将订单详情对象转换为购物车对象
+        List<ShoppingCart> shoppingCartList = orderDetailList.stream().map(x -> {
+            ShoppingCart shoppingCart = new ShoppingCart();
+
+            // 将原订单详情里面的菜品信息重新复制到购物车对象中
+            BeanUtils.copyProperties(x, shoppingCart, "id");
+            shoppingCart.setUserId(userId);
+            shoppingCart.setCreateTime(LocalDateTime.now());
+
+            return shoppingCart;
+        }).collect(Collectors.toList());
+
+
+        for(ShoppingCart s:shoppingCartList){
+            shoppingCartMapper.insert(s);
+        }
     }
 
 }
