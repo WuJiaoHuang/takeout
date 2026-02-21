@@ -1,7 +1,9 @@
 package com.sky.mapper;
 
 
+import com.sky.dto.OrdersPageQueryDTO;
 import com.sky.entity.Orders;
+import com.sky.vo.OrderStatisticsVO;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
@@ -12,6 +14,8 @@ import java.util.List;
 
 @Mapper
 public interface OrderMapper {
+
+
 
 
     /**
@@ -46,4 +50,7 @@ public interface OrderMapper {
     void updateStatus(Integer orderStatus, Integer orderPaidStatus, LocalDateTime checkOutTime, String orderNumber);
 
 
+    List<Orders> conditionSearch(OrdersPageQueryDTO ordersPageQueryDTO);
+
+    OrderStatisticsVO statistics();
 }

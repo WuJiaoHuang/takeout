@@ -1,13 +1,14 @@
 package com.sky.service.impl;
 
+
+import cn.hutool.http.HttpUtil;
+import cn.hutool.json.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.github.pagehelper.PageHelper;
 import com.sky.constant.MessageConstant;
 import com.sky.context.BaseContext;
-import com.sky.controller.user.ShopController;
-import com.sky.dto.OrdersPageQueryDTO;
-import com.sky.dto.OrdersPaymentDTO;
-import com.sky.dto.OrdersSubmitDTO;
+import com.sky.dto.*;
 import com.sky.entity.*;
 import com.sky.exception.AddressBookBusinessException;
 import com.sky.exception.OrderBusinessException;
@@ -17,17 +18,20 @@ import com.sky.result.PageResult;
 import com.sky.service.OrderService;
 import com.sky.utils.WeChatPayUtil;
 import com.sky.vo.OrderPaymentVO;
+import com.sky.vo.OrderStatisticsVO;
 import com.sky.vo.OrderSubmitVO;
 import com.sky.vo.OrderVO;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import net.bytebuddy.asm.Advice;
-import org.aspectj.bridge.Message;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,6 +57,14 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private UserMapper userMapper;
 
+    //注入门店地址配送
+    @Value("${sky.shop.address}")
+    private String shopAddress;
+    //注入百度AK
+    @Value("${sky.baidu.ak}")
+    private String baiduAk;
+    private static final double MAX_DISTANCE_KM = 5.0;
+
     @Autowired
     private WeChatPayUtil weChatPayUtil;
     /**
@@ -68,6 +80,45 @@ public class OrderServiceImpl implements OrderService {
             //抛出业务异常
             throw new AddressBookBusinessException(MessageConstant.ADDRESS_BOOK_IS_NULL);
         }
+
+
+        //拼接完整收货地址
+        String userAddress = addressBook.getProvinceName()+addressBook.getCityName()+addressBook.getDistrictName()+addressBook.getDetail();
+        //使用trim()去掉首尾空格，防止地址前后有空格影响解析
+        userAddress = userAddress.trim();
+        //获取用户地址经纬度
+        BaiduGeoResult userLocation = getLocationFromAddress(userAddress);
+        // 获取门店地址经纬度
+        BaiduGeoResult shopLocation = getLocationFromAddress(shopAddress);
+        // 计算两点距离
+        double distance = calculateDistance(shopLocation, userLocation);
+        // 判断是否超出5公里
+        if (distance > MAX_DISTANCE_KM) {
+            throw new OrderBusinessException("超出配送范围");
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         //查询当前用户购物车数据
         Long userId = BaseContext.getCurrentId();
         ShoppingCart shoppingCart = new ShoppingCart();
@@ -88,10 +139,6 @@ public class OrderServiceImpl implements OrderService {
         orders.setNumber(String.valueOf(System.currentTimeMillis()));
         orders.setAddress(addressBook.getDetail());
 
-
-
-
-
         orderMapper.insert(orders);
 
         List<OrderDetail> orderDetailList = new ArrayList<>();
@@ -111,6 +158,129 @@ public class OrderServiceImpl implements OrderService {
                 .id(orders.getId()).orderNumber(orders.getNumber()).orderAmount(orders.getAmount()).orderTime(orders.getOrderTime()).build();
         return orderSubmitVO;
     }
+
+
+
+
+
+
+
+
+
+
+    /**
+     * 根据地址获取经纬度（调用百度地理编码API）
+     */
+    private BaiduGeoResult getLocationFromAddress(String address) {
+        try {
+            // 1. 地址需要URL编码（处理中文）
+            String encodedAddress = URLEncoder.encode(address, StandardCharsets.UTF_8.toString());
+
+            // 2. 构建请求URL
+            String url = "https://api.map.baidu.com/geocoding/v3/?address="
+                    + encodedAddress
+                    + "&output=json&ak=" + baiduAk;
+
+            log.info("调用百度地理编码API");
+
+            // 3. 发送HTTP请求（使用Hutool）
+            String response = HttpUtil.get(url, 5000); // 5秒超时
+
+            // 4. 解析JSON
+            cn.hutool.json.JSONObject jsonObject = JSONUtil.parseObj(response);
+            int status = jsonObject.getInt("status");
+
+            if (status != 0) {
+                String msg = jsonObject.getStr("message");
+                throw new RuntimeException("百度地图API返回错误：" + msg);
+            }
+
+            // 5. 提取经纬度
+            cn.hutool.json.JSONObject location = jsonObject.getJSONObject("result")
+                    .getJSONObject("location");
+            double lng = location.getDouble("lng");
+            double lat = location.getDouble("lat");
+
+            log.info("地址解析成功：{} → ({}, {})", address, lng, lat);
+
+            return new BaiduGeoResult(lng, lat);
+
+        } catch (Exception e) {
+            log.error("地址解析失败：{}", address, e);
+            throw new RuntimeException("地址解析失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 计算两点间距离（调用百度轻量级路线规划API）
+     */
+    private double calculateDistance(BaiduGeoResult origin, BaiduGeoResult destination) {
+        try {
+            // 1. 构建请求URL
+            String url = "https://api.map.baidu.com/directionlite/v1/driving?" +
+                    "origin=" + origin.getLat() + "," + origin.getLng() +
+                    "&destination=" + destination.getLat() + "," + destination.getLng() +
+                    "&ak=" + baiduAk;
+
+            log.info("调用百度路线规划API");
+
+            // 2. 发送请求
+            String response = HttpUtil.get(url, 5000); // 5秒超时
+
+            // 3. 解析JSON
+            cn.hutool.json.JSONObject jsonObject = JSONUtil.parseObj(response);
+            int status = jsonObject.getInt("status");
+
+            if (status != 0) {
+                String msg = jsonObject.getStr("message");
+                throw new RuntimeException("百度路线规划API返回错误：" + msg);
+            }
+
+            // 4. 提取距离（单位：米）
+            cn.hutool.json.JSONObject result = jsonObject.getJSONObject("result");
+            JSONArray routes = result.getJSONArray("routes");
+            if (routes == null || routes.isEmpty()) {
+                throw new RuntimeException("未找到可行路线");
+            }
+
+            double distanceInMeters = routes.getJSONObject(0).getDouble("distance");
+
+            // 5. 转换为公里
+            double distanceInKm = distanceInMeters / 1000;
+
+            log.info("距离计算结果：{}米 = {}公里", distanceInMeters, distanceInKm);
+
+            return distanceInKm;
+
+        } catch (Exception e) {
+            log.error("距离计算失败", e);
+            throw new RuntimeException("距离计算失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 内部类：存储经纬度
+     */
+    @Data
+    @AllArgsConstructor
+    private static class BaiduGeoResult {
+        private double lng;
+        private double lat;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     /**
@@ -269,5 +439,119 @@ public class OrderServiceImpl implements OrderService {
             shoppingCartMapper.insert(s);
         }
     }
+
+    /**
+     * 根据条件订单搜索
+     * @param ordersPageQueryDTO
+     * @return
+     */
+    @Override
+    public PageResult conditionSearch(OrdersPageQueryDTO ordersPageQueryDTO) {
+        PageHelper.startPage(ordersPageQueryDTO.getPage(),ordersPageQueryDTO.getPageSize());
+        List<Orders> result = orderMapper.conditionSearch(ordersPageQueryDTO);
+        return new PageResult(result.size(),result);
+    }
+
+    @Override
+    public OrderStatisticsVO statistics() {
+        OrderStatisticsVO orderStatisticsVO = orderMapper.statistics();
+        return orderStatisticsVO;
+    }
+
+
+    /**
+     * 根据订单id接单
+     * @param id
+     */
+    @Override
+    public void confirm(Long id) {
+        //先查询状态
+        Orders order = orderMapper.select(Orders.builder().id(id).build()).get(0);
+        if(order==null || order.getStatus()!=Orders.TO_BE_CONFIRMED){
+            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
+        orderMapper.update(Orders.builder().id(id).status(Orders.CONFIRMED).build());
+    }
+
+    /**
+     * 商家拒单
+     * @param ordersRejectionDTO
+     */
+    @Override
+    public void rejection(OrdersRejectionDTO ordersRejectionDTO) {
+        Long id = ordersRejectionDTO.getId();
+        //先查询状态
+        Orders order = orderMapper.select(Orders.builder().id(id).build()).get(0);
+        if(order == null){
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
+        //订单状态 1待付款 2待接单 3已接单 4派送中 5已完成 6已取消 7退款
+        if(order.getStatus() == 1){
+            orderMapper.update(Orders.builder().id(id).status(6).cancelReason(ordersRejectionDTO.getRejectionReason()).cancelTime(LocalDateTime.now()).build());
+            return;
+        }
+        else if(order.getStatus() == 2){
+            orderMapper.update(Orders.builder().id(id).status(7).rejectionReason(ordersRejectionDTO.getRejectionReason()).payStatus(Orders.REFUND).cancelTime(LocalDateTime.now()).build());
+            return;
+        }
+        throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+    }
+
+    /**
+     * 商家取消订单
+     * @param ordersCancelDTO
+     */
+    @Override
+    public void cancelAdmin(OrdersCancelDTO ordersCancelDTO) {
+        Long id = ordersCancelDTO.getId();
+        //先查询状态
+        Orders order = orderMapper.select(Orders.builder().id(id).build()).get(0);
+        if(order == null){
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
+        //订单状态 1待付款 2待接单 3已接单 4派送中 5已完成 6已取消 7退款
+        if(order.getStatus() == 1){
+            orderMapper.update(Orders.builder().id(id).status(6).cancelReason(ordersCancelDTO.getCancelReason()).cancelTime(LocalDateTime.now()).build());
+            return;
+        }
+        if(order.getStatus() == 3){
+            orderMapper.update(Orders.builder().id(id).status(6).cancelReason(ordersCancelDTO.getCancelReason()).payStatus(Orders.REFUND).cancelTime(LocalDateTime.now()).build());
+            return;
+        }
+        throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+
+    }
+
+    /**
+     * 派送订单
+     * @param id
+     */
+    @Override
+    public void delivery(Long id) {
+        //先查询状态
+        Orders order = orderMapper.select(Orders.builder().id(id).build()).get(0);
+        if(order == null){
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
+        if(order.getStatus()!=3){
+            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
+        orderMapper.update(Orders.builder().id(id).status(4).build());
+    }
+
+    @Override
+    public void complete(Long id) {
+        //先查询状态
+        Orders order = orderMapper.select(Orders.builder().id(id).build()).get(0);
+        if(order == null){
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
+        if(order.getStatus()!=4){
+            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
+        orderMapper.update(Orders.builder().id(id).status(5).build());
+
+    }
+
 
 }

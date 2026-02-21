@@ -54,3 +54,7 @@ sky:
   wechat:
     appid: ${sky.wechat.appid}
     secret: ${sky.wechat.secret}
+  baidu:
+    ak: ${sky.baidu.ak}
+  shop:
+    address: 北京市东城区朝内大街225号国务院发展研究中心
